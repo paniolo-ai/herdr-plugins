@@ -22,13 +22,13 @@ correctly. Once the routing fix lands, the plugin works with no changes.
 ## Install
 
 ```bash
-herdr plugin install paniolo-ai/paniolo-herdr-plugins/obsidian
+herdr plugin install paniolo-ai/herdr-plugins/obsidian
 ```
 
 Or link a local checkout for development:
 
 ```bash
-herdr plugin link /path/to/paniolo-herdr-plugins/obsidian
+herdr plugin link /path/to/herdr-plugins/obsidian
 ```
 
 ## Requirements

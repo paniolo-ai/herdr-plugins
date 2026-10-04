@@ -18,9 +18,9 @@ A 5-row borderless footer pinned under every Devin CLI pane, showing:
 ## Install
 
 ```bash
-herdr plugin install paniolo-ai/paniolo-herdr-plugins/devin-status
+herdr plugin install paniolo-ai/herdr-plugins/devin-status
 # or link a local checkout:
-herdr plugin link /path/to/paniolo-herdr-plugins/devin-status
+herdr plugin link /path/to/herdr-plugins/devin-status
 ```
 
 ## Requirements
