@@ -2,8 +2,10 @@
 // Renders the status footer inside a plugin pane. The pane's label
 // (devin-status:<target>) names the devin pane it mirrors; if that label is
 // missing it falls back to the devin pane in its own tab.
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { basename } from 'node:path';
+import { tmpdir } from 'node:os';
 import { env } from 'node:process';
 import {
   herdr, readTranscript, transcriptPath, fmtTok, fmtDur,
@@ -31,6 +33,29 @@ function resolveTarget(selfPane) {
 
 function readUsageCache() {
   try { return JSON.parse(readFileSync(USAGE_CACHE, 'utf8')); } catch { return null; }
+}
+
+// `paniolo stale list` counts per repo, cached 5 min — heavier than git status.
+const staleCache = new Map(); // root -> { at, counts }
+function staleCounts(root) {
+  const hit = staleCache.get(root);
+  if (hit && Date.now() - hit.at < 300_000) return hit.counts;
+  let counts = null;
+  try {
+    // paniolo usually lives in <repo>/node_modules/.bin, not on PATH.
+    const pathEnv = `${root}\\node_modules\\.bin;${root}/node_modules/.bin;${env.PATH ?? ''}`;
+    const r = spawnSync('paniolo stale list', {
+      cwd: root, encoding: 'utf8', timeout: 20_000, shell: true,
+      env: { ...env, PATH: pathEnv },
+    });
+    const items = JSON.parse(r.stdout || 'null');
+    if (Array.isArray(items)) {
+      counts = {};
+      for (const it of items) counts[it.state] = (counts[it.state] ?? 0) + 1;
+    }
+  } catch {}
+  staleCache.set(root, { at: Date.now(), counts });
+  return counts;
 }
 
 function frame(p) {
@@ -110,10 +135,25 @@ function frame(p) {
 
   const scroll = (p?.scroll?.offset_from_bottom ?? 0) > 0
     ? `scrolled +${p.scroll.offset_from_bottom}` : '';
-  const stateLine = [state, sess, scroll, idle].filter(Boolean).join(' - ');
+  const stateLine = [state, sess, scroll, idle, tokens].filter(Boolean).join(' - ');
   const taskLine = [task, dirty].filter(Boolean).join(' - ');
   const spendLine = [quota, spent].filter(Boolean).join(' - ');
-  const lines = [title, taskLine, stateLine, tokens, spendLine];
+
+  // Paniolo lane: staleness counts for the target pane's repo.
+  let paniolo = '';
+  if (p?.cwd) {
+    const root = repoRoot(p.cwd);
+    const c = root && staleCounts(root);
+    if (c) {
+      const parts = [];
+      if (c['pending-verification']) parts.push(`${c['pending-verification']} pending`);
+      if (c['confirmed-stale']) parts.push(`${c['confirmed-stale']} confirmed`);
+      if (c['remediation-proposed']) parts.push(`${c['remediation-proposed']} proposed`);
+      if (c['insufficient-evidence']) parts.push(`${c['insufficient-evidence']} insuff`);
+      if (parts.length) paniolo = `stale ${parts.join(' - ')}`;
+    }
+  }
+  const lines = [title, taskLine, stateLine, spendLine, paniolo];
   return { sig: lines.join('|'), lines };
 }
 
