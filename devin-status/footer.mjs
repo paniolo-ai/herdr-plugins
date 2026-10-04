@@ -35,27 +35,41 @@ function readUsageCache() {
   try { return JSON.parse(readFileSync(USAGE_CACHE, 'utf8')); } catch { return null; }
 }
 
-// `paniolo stale list` counts per repo, cached 5 min — heavier than git status.
-const staleCache = new Map(); // root -> { at, counts }
-function staleCounts(root) {
-  const hit = staleCache.get(root);
-  if (hit && Date.now() - hit.at < 300_000) return hit.counts;
-  let counts = null;
+// Paniolo stats per repo (staleness ledger, wiki findings, qmd index),
+// cached 5 min — each is heavier than git status.
+const panioloCache = new Map(); // root -> { at, stats }
+function panioloStats(root) {
+  const hit = panioloCache.get(root);
+  if (hit && Date.now() - hit.at < 300_000) return hit.stats;
+  const stats = {};
+  const pathEnv = `${root}\\node_modules\\.bin;${root}/node_modules/.bin;${env.PATH ?? ''}`;
+  const run = cmd => {
+    try {
+      return spawnSync(cmd, { cwd: root, encoding: 'utf8', timeout: 30_000, shell: true,
+        env: { ...env, PATH: pathEnv } }).stdout ?? '';
+    } catch { return ''; }
+  };
   try {
-    // paniolo usually lives in <repo>/node_modules/.bin, not on PATH.
-    const pathEnv = `${root}\\node_modules\\.bin;${root}/node_modules/.bin;${env.PATH ?? ''}`;
-    const r = spawnSync('paniolo stale list', {
-      cwd: root, encoding: 'utf8', timeout: 20_000, shell: true,
-      env: { ...env, PATH: pathEnv },
-    });
-    const items = JSON.parse(r.stdout || 'null');
+    const items = JSON.parse(run('paniolo stale list') || 'null');
     if (Array.isArray(items)) {
-      counts = {};
-      for (const it of items) counts[it.state] = (counts[it.state] ?? 0) + 1;
+      const c = {};
+      for (const it of items) c[it.state] = (c[it.state] ?? 0) + 1;
+      stats.stale = c;
     }
   } catch {}
-  staleCache.set(root, { at: Date.now(), counts });
-  return counts;
+  try {
+    let e = 0, w = 0;
+    for (const m of run('paniolo wiki').matchAll(/(\d+) error,\s*(\d+) warn/g)) {
+      e += Number(m[1]); w += Number(m[2]);
+    }
+    if (e || w) { stats.wikiErr = e; stats.wikiWarn = w; }
+  } catch {}
+  try {
+    const m = run('paniolo qmd status').match(/(\d+) active document/);
+    if (m) stats.qmdDocs = Number(m[1]);
+  } catch {}
+  panioloCache.set(root, { at: Date.now(), stats });
+  return stats;
 }
 
 function frame(p) {
@@ -139,18 +153,24 @@ function frame(p) {
   const taskLine = [task, dirty].filter(Boolean).join(' - ');
   const spendLine = [quota, spent].filter(Boolean).join(' - ');
 
-  // Paniolo lane: staleness counts for the target pane's repo.
+  // Paniolo lane: staleness counts, wiki findings, qmd index for the
+  // target pane's repo.
   let paniolo = '';
   if (p?.cwd) {
     const root = repoRoot(p.cwd);
-    const c = root && staleCounts(root);
-    if (c) {
+    const s = root && panioloStats(root);
+    if (s) {
       const parts = [];
-      if (c['pending-verification']) parts.push(`${c['pending-verification']} pending`);
-      if (c['confirmed-stale']) parts.push(`${c['confirmed-stale']} confirmed`);
-      if (c['remediation-proposed']) parts.push(`${c['remediation-proposed']} proposed`);
-      if (c['insufficient-evidence']) parts.push(`${c['insufficient-evidence']} insuff`);
-      if (parts.length) paniolo = `stale ${parts.join(' - ')}`;
+      const c = s.stale ?? {};
+      const segs = [];
+      if (c['pending-verification']) segs.push(`${c['pending-verification']} pending`);
+      if (c['confirmed-stale']) segs.push(`${c['confirmed-stale']} confirmed`);
+      if (c['remediation-proposed']) segs.push(`${c['remediation-proposed']} proposed`);
+      if (c['insufficient-evidence']) segs.push(`${c['insufficient-evidence']} insuff`);
+      if (segs.length) parts.push(`stale ${segs.join('/')}`);
+      if (s.wikiErr || s.wikiWarn) parts.push(`wiki ${s.wikiErr}e/${s.wikiWarn}w`);
+      if (s.qmdDocs) parts.push(`qmd ${s.qmdDocs >= 1e3 ? (s.qmdDocs / 1e3).toFixed(1) + 'k' : s.qmdDocs} docs`);
+      if (parts.length) paniolo = `Paniolo: ${parts.join(' - ')}`;
     }
   }
   const lines = [title, taskLine, stateLine, spendLine, paniolo];
