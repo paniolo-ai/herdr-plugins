@@ -1,0 +1,17 @@
+id = "paniolo.obsidian"
+name = "Obsidian Links"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Ctrl+click obsidian:// links in terminal output to open them in Obsidian — no browser round-trip, no OS trust prompt."
+platforms = ["windows", "macos", "linux"]
+
+[[actions]]
+id = "open"
+title = "Open link in Obsidian"
+command = ["node", "open.mjs"]
+
+[[link_handlers]]
+id = "obsidian-uri"
+title = "Open obsidian:// link in Obsidian"
+pattern = "^obsidian://"
+action = "open"
