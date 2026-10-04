@@ -15,7 +15,7 @@ export const TICK_MS = 15_000;
 export const USAGE_TTL_MS = 300_000;
 
 export function herdr(...args) {
-  const r = spawnSync(HERDR, args, { encoding: 'utf8', timeout: 15_000 });
+  const r = spawnSync(HERDR, args, { encoding: 'utf8', timeout: 15_000, windowsHide: true });
   if (r.status !== 0 || !r.stdout) return null;
   try { return JSON.parse(r.stdout).result; } catch { return null; }
 }
@@ -91,7 +91,7 @@ export function usage() {
       metadata: { apiKey: cred.windsurf_api_key, ideName: 'devin', ideVersion: '3000.11.3', extensionVersion: '3000.11.3', locale: 'en' },
     });
     const r = spawnSync('curl', ['-sS', '-m', '8', '-X', 'POST', `${server}/exa.seat_management_pb.SeatManagementService/GetUserStatus`,
-      '-H', 'content-type: application/json', '-H', 'Connect-Protocol-Version: 1', '--data-binary', body], { encoding: 'utf8', timeout: 12_000 });
+      '-H', 'content-type: application/json', '-H', 'Connect-Protocol-Version: 1', '--data-binary', body], { encoding: 'utf8', timeout: 12_000, windowsHide: true });
     const ps = JSON.parse(r.stdout)?.userStatus?.planStatus;
     if (!ps) throw new Error('no planStatus');
     const info = ps.planInfo ?? {};
@@ -114,7 +114,7 @@ export function usage() {
 }
 
 export function git(args, cwd) {
-  const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', timeout: 10_000 });
+  const r = spawnSync('git', ['-C', cwd, ...args], { encoding: 'utf8', timeout: 10_000, windowsHide: true });
   return r.status === 0 ? r.stdout.trimEnd() : '';
 }
 

@@ -16,7 +16,7 @@ if (!uri?.startsWith('obsidian://')) {
 }
 
 const launch = (cmd, args) =>
-  spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
+  spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true }).unref();
 
 if (platform === 'win32') {
   const candidates = [

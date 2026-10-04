@@ -1,7 +1,8 @@
 // Reconcile pass: report statusline metadata for every devin pane, clean up
 // stale labels, close orphaned footers, provision missing ones, clamp heights.
 import { openSync, closeSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { env } from 'node:process';
 import {
   herdr, usage, readTranscript, contextWindow, git,
@@ -9,6 +10,9 @@ import {
 } from './core.mjs';
 
 const home = env.USERPROFILE ?? env.HOME ?? '';
+const pluginRoot = env.HERDR_PLUGIN_ROOT ?? dirname(dirname(fileURLToPath(import.meta.url)));
+const footerCmd = `node "${join(pluginRoot, 'footer.mjs')}"`;
+const SHELL_RE = /powershell|pwsh|cmd\.exe|bash|zsh|fish/i;
 
 function devinInfo(agent) {
   const sessionId = agent.agent_session?.value;
@@ -121,10 +125,18 @@ function reconcileInner() {
       herdr('pane', 'focus', a.pane_id); // pane open may steal focus
     }
   }
-  // Clamp footers to FOOTER_MAX_ROWS (splits floor at 10% of tab height).
+  // Clamp footers to FOOTER_MAX_ROWS and resurrect dead render loops (a
+  // server restart kills the footer process, leaving a bare shell prompt).
   const panesNow = herdr('pane', 'list')?.panes ?? [];
   for (const p of panesNow) {
-    if (!/^devin-status:/.test(p.label ?? '')) continue;
+    const m = (p.label ?? '').match(/^devin-status:(\S+)/);
+    if (!m) continue;
+    const target = m[1];
+    const info = herdr('pane', 'get', p.pane_id)?.pane;
+    if (SHELL_RE.test(info?.terminal_title_stripped ?? '')) {
+      herdr('pane', 'send-text', p.pane_id, `${footerCmd} ${target}`);
+      herdr('pane', 'send-keys', p.pane_id, 'enter');
+    }
     for (let i = 0; i < 8; i++) {
       const rows = herdr('pane', 'get', p.pane_id)?.pane?.scroll?.viewport_rows;
       if (!rows || rows <= FOOTER_MAX_ROWS) break;

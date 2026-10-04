@@ -9,5 +9,5 @@ try { reconcile(); } catch {}
 
 const root = dirname(fileURLToPath(import.meta.url));
 spawn(process.execPath, [join(root, 'daemon.mjs')], {
-  detached: true, stdio: 'ignore', env: process.env,
+  detached: true, stdio: 'ignore', env: process.env, windowsHide: true,
 }).unref();
