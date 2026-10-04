@@ -1,6 +1,6 @@
 // Reconcile pass: report statusline metadata for every devin pane, clean up
 // stale labels, close orphaned footers, provision missing ones, clamp heights.
-import { openSync, closeSync, mkdirSync } from 'node:fs';
+import { openSync, closeSync, writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { env } from 'node:process';
 import {
@@ -34,17 +34,33 @@ function quotaSeg() {
   return `500% D${pct(u?.daily)}% W${pct(u?.weekly)}% M${m}%`;
 }
 
-// Serialize reconciles across daemon + event hooks.
+// Serialize reconciles across daemon + event hooks. Lock = pid file; a dead
+// holder's lock is reclaimed, and the file is removed on release.
+const lockPath = join(LOCK_DIR, 'devin-status-reconcile.lock');
+
 function acquireLock() {
-  const f = join(LOCK_DIR, 'devin-status-reconcile.lock');
-  try { return openSync(f, 'wx'); } catch { return null; }
+  try {
+    const fd = openSync(lockPath, 'wx');
+    writeFileSync(fd, String(process.pid));
+    return fd;
+  } catch {}
+  try {
+    const pid = Number(readFileSync(lockPath, 'utf8'));
+    if (pid && pid !== process.pid) {
+      try { process.kill(pid, 0); return null; } catch {} // live holder
+    }
+    unlinkSync(lockPath); // stale lock
+    const fd = openSync(lockPath, 'wx');
+    writeFileSync(fd, String(process.pid));
+    return fd;
+  } catch { return null; }
 }
 
 export function reconcile() {
   const fd = acquireLock();
   if (fd === null) return;
   try { reconcileInner(); }
-  finally { closeSync(fd); }
+  finally { closeSync(fd); try { unlinkSync(lockPath); } catch {} }
 }
 
 function reconcileInner() {
@@ -67,7 +83,7 @@ function reconcileInner() {
     if (disp) stats += ` ${disp}`;
     const title = `devin${model ? ' ' + model : ''} ${stats}`;
     herdr('pane', 'report-metadata', a.pane_id, '--source', 'devin-statusline',
-      '--seq', String(Date.now() * 10_000), '--ttl-ms', '120000',
+      '--seq', String(Date.now() * 1e6), '--ttl-ms', '120000',
       '--token', `model=${model}`, '--token', `stats=${stats}`, '--title', title);
     if (labelByPane[a.pane_id] !== title) herdr('pane', 'rename', a.pane_id, title);
   }
