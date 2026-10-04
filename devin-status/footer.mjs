@@ -163,13 +163,13 @@ function frame(p) {
       const parts = [];
       const c = s.stale ?? {};
       const segs = [];
-      if (c['pending-verification']) segs.push(`${c['pending-verification']} pending`);
-      if (c['confirmed-stale']) segs.push(`${c['confirmed-stale']} confirmed`);
-      if (c['remediation-proposed']) segs.push(`${c['remediation-proposed']} proposed`);
-      if (c['insufficient-evidence']) segs.push(`${c['insufficient-evidence']} insuff`);
-      if (segs.length) parts.push(`stale ${segs.join('/')}`);
-      if (s.wikiErr || s.wikiWarn) parts.push(`wiki ${s.wikiErr}e/${s.wikiWarn}w`);
-      if (s.qmdDocs) parts.push(`qmd ${s.qmdDocs >= 1e3 ? (s.qmdDocs / 1e3).toFixed(1) + 'k' : s.qmdDocs} docs`);
+      if (c['pending-verification']) segs.push(`pending ${c['pending-verification']}`);
+      if (c['confirmed-stale']) segs.push(`confirmed ${c['confirmed-stale']}`);
+      if (c['remediation-proposed']) segs.push(`proposed ${c['remediation-proposed']}`);
+      if (c['insufficient-evidence']) segs.push(`insuff ${c['insufficient-evidence']}`);
+      if (segs.length) parts.push(`stale ${segs.join(' ')}`);
+      if (s.wikiErr || s.wikiWarn) parts.push(`wiki err ${s.wikiErr} warn ${s.wikiWarn}`);
+      if (s.qmdDocs) parts.push(`qmd docs ${s.qmdDocs >= 1e3 ? (s.qmdDocs / 1e3).toFixed(1) + 'k' : s.qmdDocs}`);
       if (parts.length) paniolo = `Paniolo: ${parts.join(' - ')}`;
     }
   }
