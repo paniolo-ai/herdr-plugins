@@ -1,0 +1,33 @@
+id = "paniolo.cursor-status"
+name = "Cursor Status Footer"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Per-session status footer for Cursor Agent CLI panes: model, context %, monthly Included/Auto/API quotas, approval mode, in-flight tools, session tokens, dirty repos, live Paniolo CLI stats."
+platforms = ["windows", "macos", "linux"]
+
+[[startup]]
+command = ["node", "startup.mjs"]
+
+[[events]]
+on = "pane.agent_detected"
+command = ["node", "event.mjs"]
+
+[[events]]
+on = "pane.exited"
+command = ["node", "event.mjs"]
+
+[[events]]
+on = "pane.closed"
+command = ["node", "event.mjs"]
+
+[[panes]]
+id = "footer"
+title = "Cursor status"
+placement = "split"
+command = ["node", "footer.mjs"]
+
+[[actions]]
+id = "reconcile"
+title = "Provision/repair Cursor footers now"
+contexts = ["workspace"]
+command = ["node", "reconcile.mjs"]
