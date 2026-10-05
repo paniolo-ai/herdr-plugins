@@ -52,3 +52,9 @@ target devin pane from its own `devin-status:<pane>` label.
 ```bash
 herdr plugin action invoke paniolo.devin-status.reconcile
 ```
+
+---
+
+Part of the [Paniolo](https://paniolo.ai) ecosystem — the intelligence layer
+for coding agents. The Paniolo footer lane reads live stats from the
+`paniolo` CLI (`stale`, `wiki`, `qmd`) — try it with `npx @paniolo/cli scan .`
