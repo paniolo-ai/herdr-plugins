@@ -108,11 +108,35 @@ function reconcileInner(herdr) {
     if (OUR_LABEL_RE.test(p.label ?? '')) herdr('pane', 'rename', p.pane_id, '--clear');
   }
 
-  // Footer bookkeeping: footers carry label paniolo-codex:<target>.
+  // Footer bookkeeping: footers carry label paniolo-codex:<target>. A live
+  // render loop also shows `footer.mjs` in the pane's foreground argv, which
+  // is how unlabeled survivors of an interrupted provision are found — a
+  // bare shell left by a killed loop is indistinguishable from a user pane
+  // and is left alone.
   const footerByTarget = new Map();
   for (const p of panes) {
     const m = (p.label ?? '').match(/^paniolo-codex:(\S+)/);
-    if (m) footerByTarget.set(m[1], p.pane_id);
+    if (m) {
+      if (footerByTarget.has(m[1])) { herdr('pane', 'close', p.pane_id); continue; }
+      footerByTarget.set(m[1], p.pane_id);
+      continue;
+    }
+    if (p.label) continue; // user-named pane — never a plugin footer
+    const fg = herdr('pane', 'process-info', '--pane', p.pane_id)
+      ?.process_info?.foreground_processes ?? [];
+    const isFooter = fg.some(pr =>
+      /(^|[\\/])footer\.mjs$/.test(pr.argv?.at(-1) ?? '') || /footer\.mjs/.test(pr.cmdline ?? ''));
+    if (!isFooter) continue;
+    // Unlabeled live footer: adopt only when its tab has exactly one Codex
+    // pane — a shared-tab footer's env-set target can't be recovered, so an
+    // ambiguous pane is closed and the provision loop respawns it labeled.
+    const tabAgents = codexAgents.filter(a => a.tab_id === p.tab_id);
+    if (tabAgents.length === 1 && !footerByTarget.has(tabAgents[0].pane_id)) {
+      herdr('pane', 'rename', p.pane_id, `${FOOTER_PREFIX}${tabAgents[0].pane_id}`);
+      footerByTarget.set(tabAgents[0].pane_id, p.pane_id);
+    } else {
+      herdr('pane', 'close', p.pane_id);
+    }
   }
   // Orphans: footer target no longer runs Codex -> close.
   for (const [target, footer] of footerByTarget) {
@@ -144,10 +168,22 @@ function reconcileInner(herdr) {
       herdr('pane', 'send-text', p.pane_id, `${footerCmd} ${target}`);
       herdr('pane', 'send-keys', p.pane_id, 'enter');
     }
+    // Resize grows the named pane's edge toward the direction, so a footer
+    // shrinks by growing a neighbor into it: the pane above first (the
+    // footer's own bottom edge is a dead end once something sits below).
     for (let i = 0; i < 8; i++) {
       const rows = herdr('pane', 'get', p.pane_id)?.pane?.scroll?.viewport_rows;
       if (!rows || rows <= FOOTER_MAX_ROWS) break;
-      const r = herdr('pane', 'resize', '--pane', p.pane_id, '--direction', 'down', '--amount', '20');
+      const above = herdr('pane', 'neighbor', '--pane', p.pane_id, '--direction', 'up')
+        ?.neighbor?.neighbor_pane_id;
+      const below = herdr('pane', 'neighbor', '--pane', p.pane_id, '--direction', 'down')
+        ?.neighbor?.neighbor_pane_id;
+      const amount = String(rows - FOOTER_MAX_ROWS + 8);
+      let r = above
+        ? herdr('pane', 'resize', '--pane', above, '--direction', 'down', '--amount', amount)
+        : null;
+      if (!r?.resize?.changed && below)
+        r = herdr('pane', 'resize', '--pane', below, '--direction', 'up', '--amount', amount);
       if (!r?.resize?.changed) break;
     }
   }
