@@ -22,7 +22,18 @@ export function ensureCacheDir() {
 
 export function herdr(...args) {
   const r = spawnSync(HERDR, args, { encoding: 'utf8', timeout: 15_000, windowsHide: true });
-  if (r.status !== 0 || !r.stdout) return null;
+  if (r.status !== 0 || !r.stdout) {
+    // Exit 2 is a usage error and r.error a spawn or timeout failure: both mean
+    // this plugin called the CLI wrong, and herdr puts the detail on stderr, so
+    // echo it where `herdr plugin log list` will show it. Exit 1 is a structured
+    // runtime no -- a pane that closed mid-reconcile -- and stays quiet, or every
+    // close would log a harmless pane_not_found.
+    if (r.status === 2 || r.error) {
+      const why = r.error ? (r.error.code ?? r.error.message) : `exit ${r.status}`;
+      console.error(`herdr ${args.join(' ')} failed (${why}): ${(r.stderr ?? '').trim()}`);
+    }
+    return null;
+  }
   try { return JSON.parse(r.stdout).result; } catch { return null; }
 }
 
