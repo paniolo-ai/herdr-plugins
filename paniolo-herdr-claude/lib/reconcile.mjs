@@ -136,11 +136,10 @@ function reconcileInner() {
   for (const a of claudeAgents) {
     if (!a.tab_id || footerByTab.has(a.tab_id)) continue;
     const opened = herdr('plugin', 'pane', 'open', '--plugin', env.HERDR_PLUGIN_ID ?? 'paniolo-herdr-claude',
-      '--entrypoint', 'footer', '--placement', 'split', '--target-pane', a.pane_id, '--direction', 'down');
+      '--entrypoint', 'footer', '--placement', 'split', '--target-pane', a.pane_id, '--direction', 'down', '--no-focus');
     const id = opened?.plugin_pane?.pane?.pane_id ?? opened?.pane?.pane_id ?? opened?.pane_id;
     if (id) {
       herdr('pane', 'rename', id, `${FOOTER_PREFIX}${a.pane_id}`);
-      herdr('pane', 'focus', a.pane_id); // pane open may steal focus
     }
   }
   // Clamp footers to FOOTER_MAX_ROWS and resurrect dead render loops (a
