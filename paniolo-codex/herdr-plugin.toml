@@ -1,0 +1,33 @@
+id = "paniolo-codex"
+name = "Paniolo Codex Footer"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Per-session status footer for Codex panes: model, effort, context %, rate-limit windows, sandbox and approval mode, tools, session tokens, dirty repos."
+platforms = ["windows", "macos", "linux"]
+
+[[startup]]
+command = ["node", "startup.mjs"]
+
+[[events]]
+on = "pane.agent_detected"
+command = ["node", "event.mjs"]
+
+[[events]]
+on = "pane.exited"
+command = ["node", "event.mjs"]
+
+[[events]]
+on = "pane.closed"
+command = ["node", "event.mjs"]
+
+[[panes]]
+id = "footer"
+title = "Codex status"
+placement = "split"
+command = ["node", "footer.mjs"]
+
+[[actions]]
+id = "reconcile"
+title = "Provision/repair Codex footers now"
+contexts = ["workspace"]
+command = ["node", "reconcile.mjs"]
