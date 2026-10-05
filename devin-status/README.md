@@ -4,16 +4,22 @@ A 5-row borderless footer pinned under every Devin CLI pane, showing:
 
 ```
  devin swe-2-high C20% 500% D00% W00% M00% main ~/gh/meta/paniolo
- <task title> - dirty <repo> <N>m <N>u
- <state> - <session> - scrolled +N - idle <dur>
- <tokens> in - <tokens> out - <cached> cached - +<rate>/min
+ <task title> - dirty <repo> <N>m <N>u - <repo2> ...
+ <state> - <session> - scrolled +N - idle <dur> - <tok> in - <tok> out - <tok> cached - +<rate>/min
  quota daily <%> (<reset>) - weekly <%> (<reset>) - spent $<amt> (<cycle> left)
+ Paniolo: stale pending <N> insuff <N> - wiki err <N> warn <N> - qmd docs <N>
 ```
 
 - Line 1 is the statusline (`model`, context %, 5h/daily/weekly/monthly quota,
   branch, cwd) pushed via `pane report-metadata` — also the pane's label.
+- Line 3 merges agent state, scroll/idle, and session token totals from the
+  devin transcript (`final_metrics`), plus a token burn rate between ticks.
+- Line 5 is the Paniolo lane: `paniolo stale list` state counts, `paniolo
+  wiki` error/warn totals, and `paniolo qmd status` document count for the
+  target pane's repo — cached 5 min per repo, blank where no stats exist.
 - Footers are plugin-owned panes labeled `devin-status:<pane>`; they open
-  reactively on `pane.agent_detected` and close when their devin pane exits.
+  reactively on `pane.agent_detected`, close when their devin pane exits,
+  and resurrect their render loop after herdr server restarts.
 
 ## Install
 
