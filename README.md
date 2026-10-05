@@ -29,32 +29,6 @@ Use that ID for enable/disable commands and action names, such as
 `herdr plugin action invoke paniolo-herdr-codex.reconcile`.
 Built-in agent integrations keep their Herdr names: `herdr integration install codex`.
 
-## Upgrading From Previous Names
-
-| Previous Folder | Previous Plugin ID | New Folder And Plugin ID |
-| --- | --- | --- |
-| `claude-status` | `paniolo.claude-status` | `paniolo-herdr-claude` |
-| `cursor-status` | `paniolo.cursor-status` | `paniolo-herdr-cursor` |
-| `devin-status` | `paniolo.devin-status` | `paniolo-herdr-devin` |
-| `paniolo-codex` | `paniolo-codex` | `paniolo-herdr-codex` |
-| `obsidian` | `paniolo.obsidian` | `paniolo-herdr-obsidian` |
-
-Remove each previous registration before installing the new one to avoid duplicate footers.
-For example, for a GitHub-installed Codex plugin:
-
-```bash
-herdr plugin uninstall paniolo-codex
-herdr plugin install paniolo-ai/herdr-plugins/paniolo-herdr-codex
-```
-
-For a local checkout, use `herdr plugin unlink <previous-id>`, then link the renamed folder.
-Run `node startup.mjs` from each footer plugin's new root to start it immediately,
-or let Herdr run its startup hook on the next server start.
-
-For Cursor, also update the absolute `statusLine.command` path in
-`~/.cursor/cli-config.json` to `paniolo-herdr-cursor/statusline.mjs`, then restart Cursor CLI.
-Runtime cache paths and footer pane labels keep their previous values to preserve session data.
-
 ---
 
 Built by **[Paniolo](https://paniolo.ai)** — Agentic Knowledge · Harness
