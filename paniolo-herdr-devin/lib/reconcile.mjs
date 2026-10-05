@@ -98,12 +98,38 @@ function reconcileInner() {
     if (/^devin \S* ?C\d+% /.test(p.label ?? '')) herdr('pane', 'rename', p.pane_id, '--clear');
   }
 
-  // Footer bookkeeping: footers carry label devin-status:<target>.
+  // Footer bookkeeping: footers carry label devin-status:<target>. A live
+  // render loop also shows `footer.mjs` in the pane's foreground argv, which
+  // is how unlabeled survivors of an interrupted provision are found — a
+  // bare shell left by a killed loop is indistinguishable from a user pane
+  // and is left alone.
   const footerByTarget = new Map();
   const footerByTab = new Map();
   for (const p of panes) {
     const m = (p.label ?? '').match(/^devin-status:(\S+)/);
-    if (m) { footerByTarget.set(m[1], p.pane_id); footerByTab.set(p.tab_id, p.pane_id); }
+    if (m) {
+      if (footerByTab.has(p.tab_id)) { herdr('pane', 'close', p.pane_id); continue; }
+      footerByTarget.set(m[1], p.pane_id);
+      footerByTab.set(p.tab_id, p.pane_id);
+      continue;
+    }
+    if (p.label) continue; // user-named pane — never a plugin footer
+    const fg = herdr('pane', 'process-info', '--pane', p.pane_id)
+      ?.process_info?.foreground_processes ?? [];
+    const isFooter = fg.some(pr =>
+      /(^|[\\/])footer\.mjs$/.test(pr.argv?.at(-1) ?? '') || /footer\.mjs/.test(pr.cmdline ?? ''));
+    if (!isFooter) continue;
+    // Unlabeled live footer: adopt when its tab has a devin pane and no
+    // footer yet (the loop already renders that pane per its fallback);
+    // otherwise it is a duplicate or orphan — close it.
+    const devinOnTab = devinAgents.find(a => a.tab_id === p.tab_id);
+    if (devinOnTab && !footerByTab.has(p.tab_id)) {
+      herdr('pane', 'rename', p.pane_id, `${FOOTER_PREFIX}${devinOnTab.pane_id}`);
+      footerByTarget.set(devinOnTab.pane_id, p.pane_id);
+      footerByTab.set(p.tab_id, p.pane_id);
+    } else {
+      herdr('pane', 'close', p.pane_id);
+    }
   }
   // Orphans: footer target no longer runs devin -> close.
   for (const [target, footer] of footerByTarget) {
@@ -136,10 +162,22 @@ function reconcileInner() {
       herdr('pane', 'send-text', p.pane_id, `${footerCmd} ${target}`);
       herdr('pane', 'send-keys', p.pane_id, 'enter');
     }
+    // Resize grows the named pane's edge toward the direction, so a footer
+    // shrinks by growing a neighbor into it: the pane above first (the
+    // footer's own bottom edge is a dead end once something sits below).
     for (let i = 0; i < 8; i++) {
       const rows = herdr('pane', 'get', p.pane_id)?.pane?.scroll?.viewport_rows;
       if (!rows || rows <= FOOTER_MAX_ROWS) break;
-      const r = herdr('pane', 'resize', '--pane', p.pane_id, '--direction', 'down', '--amount', '20');
+      const above = herdr('pane', 'neighbor', '--pane', p.pane_id, '--direction', 'up')
+        ?.neighbor?.neighbor_pane_id;
+      const below = herdr('pane', 'neighbor', '--pane', p.pane_id, '--direction', 'down')
+        ?.neighbor?.neighbor_pane_id;
+      const amount = String(rows - FOOTER_MAX_ROWS + 8);
+      let r = above
+        ? herdr('pane', 'resize', '--pane', above, '--direction', 'down', '--amount', amount)
+        : null;
+      if (!r?.resize?.changed && below)
+        r = herdr('pane', 'resize', '--pane', below, '--direction', 'up', '--amount', amount);
       if (!r?.resize?.changed) break;
     }
   }
