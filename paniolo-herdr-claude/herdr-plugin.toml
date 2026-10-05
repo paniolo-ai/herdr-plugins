@@ -1,0 +1,33 @@
+id = "paniolo-herdr-claude"
+name = "Paniolo Herdr Claude"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Per-session status footer for Claude Code panes: model, effort, context %, rate-limit windows, permission mode, subagents, session tokens, dirty repos."
+platforms = ["windows", "macos", "linux"]
+
+[[startup]]
+command = ["node", "startup.mjs"]
+
+[[events]]
+on = "pane.agent_detected"
+command = ["node", "event.mjs"]
+
+[[events]]
+on = "pane.exited"
+command = ["node", "event.mjs"]
+
+[[events]]
+on = "pane.closed"
+command = ["node", "event.mjs"]
+
+[[panes]]
+id = "footer"
+title = "Claude status"
+placement = "split"
+command = ["node", "footer.mjs"]
+
+[[actions]]
+id = "reconcile"
+title = "Provision/repair Claude footers now"
+contexts = ["workspace"]
+command = ["node", "reconcile.mjs"]
