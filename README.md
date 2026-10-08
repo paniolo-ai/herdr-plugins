@@ -37,4 +37,4 @@ Engineering. New York & Honolulu, Hawaiʻi.
 - Site: <https://paniolo.ai>
 - Docs: <https://paniolo.ai/docs>
 - Writing: [Harnessed on Substack](https://bkinsey808.substack.com/)
-- Open source: <https://github.com/paniolo-ai>
+- GitHub: <https://github.com/paniolo-ai>
