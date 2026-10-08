@@ -41,7 +41,7 @@ herdr plugin link /path/to/herdr-plugins/paniolo-herdr-devin
 ## How it works
 
 `startup.mjs` runs one reconcile and spawns `daemon.mjs` detached — a 15s loop
-that refreshes quotas (`GetUserStatus` RPC, 5-min cache), reads devin
+that refreshes quotas (`GetUserStatus` RPC, 60s cache), reads devin
 transcripts for model/context/tokens, reports pane metadata, and provisions,
 orphan-cleans, and height-clamps footer panes. `event.mjs` runs the same
 reconcile on `pane.agent_detected`/`pane.exited`/`pane.closed` so footers
