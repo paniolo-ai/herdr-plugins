@@ -18,6 +18,11 @@ const BARE_PROMPT_RE = /^PS\s.*>\s*$|[$#%>]\s*$/;
 // Our own statusline labels, so they can be cleared off panes that stopped
 // running Codex. Narrow enough not to touch another plugin's labels.
 const OUR_LABEL_RE = /^codex\b.*\bC(?:\d+|\?\?)%/;
+// The footer's band opens with the same signature; matching it on screen
+// finds live loops and killed ones' scrollback residue alike, which is how
+// label-less footers are recognised on Windows where process-info only
+// reports the pane's shell.
+const BAND_RE = /^\s*codex\b.*\bC(?:\d+|\?\?)%/m;
 
 export function paneSnapshot(agent) {
   const sessionId = agent.agent_session?.value ?? null;
@@ -126,8 +131,10 @@ function reconcileInner(herdr) {
     if (p.label) continue; // user-named pane — never a plugin footer
     const fg = herdr('pane', 'process-info', '--pane', p.pane_id)
       ?.process_info?.foreground_processes ?? [];
-    const isFooter = fg.some(pr =>
+    let isFooter = fg.some(pr =>
       /(^|[\\/])footer\.mjs$/.test(pr.argv?.at(-1) ?? '') || /footer\.mjs/.test(pr.cmdline ?? ''));
+    if (!isFooter && codexAgents.some(a => a.tab_id === p.tab_id))
+      isFooter = BAND_RE.test(herdrText('pane', 'read', p.pane_id));
     if (!isFooter) continue;
     // Unlabeled live footer: adopt only when its tab has exactly one Codex
     // pane — a shared-tab footer's env-set target can't be recovered, so an
