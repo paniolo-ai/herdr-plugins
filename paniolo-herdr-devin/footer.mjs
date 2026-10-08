@@ -196,8 +196,16 @@ function frame(p) {
   return { sig: lines.join('|'), lines };
 }
 
-function paint(lines) {
-  const h = process.stdout.rows ?? 24, w = process.stdout.columns ?? 80;
+// The pty's reported size can drift from the pane's real cell rect — a line
+// that wraps pushes the band's first line off the top, which is where the
+// statusline lives. The layout rect is the truthful size when herdr knows it.
+function selfRect() {
+  const panes = selfId ? herdr('pane', 'layout', '--pane', selfId)?.layout?.panes : null;
+  const r = panes?.find(q => q.pane_id === selfId)?.rect;
+  return r ? { w: r.width, h: r.height } : null;
+}
+
+function paint(lines, w, h) {
   let out = `${ESC}[${BAND}m${ESC}[2J${ESC}[H${ESC}[1m${ESC}[${TEXT}m`;
   for (let i = 0; i < lines.length && i < h; i++) {
     let line = ` ${lines[i]}`;
@@ -215,8 +223,11 @@ for (;;) {
   // Drop a resolved target whose pane no longer exists.
   if (target && !herdr('pane', 'get', target)) target = null;
   const p = target ? herdr('pane', 'get', target)?.pane : null;
+  const rect = selfRect();
+  const w = rect?.w ?? process.stdout.columns ?? 80;
+  const h = rect?.h ?? process.stdout.rows ?? 24;
   const { sig, lines } = frame(p);
   tick++;
-  if (sig !== lastSig || tick % 4 === 0) { paint(lines); lastSig = sig; }
+  if (sig !== lastSig || tick % 4 === 0) { paint(lines, w, h); lastSig = sig; }
   await new Promise(r => setTimeout(r, TICK_MS));
 }
