@@ -12,7 +12,7 @@ export const USAGE_CACHE = join(tmpdir(), 'devin-statusline-usage.json');
 export const FOOTER_PREFIX = 'devin-status:';
 export const FOOTER_MAX_ROWS = 5;
 export const TICK_MS = 15_000;
-export const USAGE_TTL_MS = 300_000;
+export const USAGE_TTL_MS = 60_000;
 
 export function herdr(...args) {
   const r = spawnSync(HERDR, args, { encoding: 'utf8', timeout: 15_000, windowsHide: true });
