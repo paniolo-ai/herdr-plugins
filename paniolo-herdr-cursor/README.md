@@ -7,7 +7,7 @@ A 5-row borderless footer pinned under every Cursor Agent CLI pane, showing:
  <session title> - dirty <repo> <N>m <N>u - <repo2> ...
  <state> - <session> - <mode> - <N> agents - <tool>… - scrolled +N - <idle> - ctx <tok>/<tok> - <N> tools - <tok> in - <tok> out - +<rate>/min
  quota Pro - included 47% resets <when> (<left>) - auto 2% - api 0% - on-demand off
- Paniolo: stale pending <N> insuff <N> - wiki err <N> warn <N> - qmd docs <N>
+ Paniolo: stale pend <N> ins <N> dis <N> res <N> prop <N> - wiki err <N> warn <N> - qmd docs <N>
 ```
 
 - Line 1 is the statusline (`model`, context %, monthly Included/Auto/API
@@ -21,9 +21,10 @@ A 5-row borderless footer pinned under every Cursor Agent CLI pane, showing:
 - Line 4 is the quota lane — Cursor's monthly plan usage (Included / Auto /
   API / On-Demand) from `GetCurrentPeriodUsage`, with the billing-cycle
   reset as a local wall-clock stamp.
-- Line 5 is the Paniolo lane: `paniolo stale list` state counts, `paniolo
-  wiki` error/warn totals, and `paniolo qmd status` document count for the
-  target pane's repo — cached 5 min per repo, blank where no stats exist.
+- Line 5 is the Paniolo lane: `paniolo stale list` state counts (every
+  non-zero state, fixed order), `paniolo wiki` error/warn totals, and
+  `paniolo qmd status` document count for the target pane's repo — cached
+  5 min per repo, blank where no stats exist.
 - Footers are plugin-owned panes labeled `cursor-status:<pane>`; they open
   reactively on `pane.agent_detected`, close when their Cursor pane exits,
   and resurrect their render loop after herdr server restarts.

@@ -29,6 +29,13 @@ export function herdr(...args) {
   try { return JSON.parse(r.stdout).result; } catch { return null; }
 }
 
+// Same spawn as herdr(), for CLI verbs that print raw text instead of the
+// JSON envelope (`pane read`).
+export function herdrText(...args) {
+  const r = spawnSync(HERDR, args, { encoding: 'utf8', timeout: 15_000, windowsHide: true });
+  return r.status === 0 ? (r.stdout ?? '') : '';
+}
+
 export function fmtTok(n) {
   if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
   if (n >= 1e3) return `${Math.round(n / 1e3)}k`;
