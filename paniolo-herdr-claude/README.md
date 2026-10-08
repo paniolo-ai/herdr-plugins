@@ -7,7 +7,7 @@ A 5-row borderless footer pinned under every Claude Code pane, showing:
  <ai title> - dirty <repo> <N>m <N>u - <repo2> ...
  <state> - <session> - <mode> - <N> agents - <tool>… - scrolled +N - <idle> - ctx <tok>/<tok> - <tok> in - <tok> out - <tok> cached - +<rate>/min
  limits 5h <%> resets <when> (<left>) - W <%> resets <when> (<left>) - credits <%> of $<limit> - usage <age> old (/usage)
- Paniolo: stale pending <N> insuff <N> - wiki err <N> warn <N> - qmd docs <N>
+ Paniolo: stale pend <N> ins <N> dis <N> res <N> prop <N> - wiki err <N> warn <N> - qmd docs <N>
 ```
 
 - Line 1 is the statusline (`model`, thinking effort, context %, 5h/weekly
@@ -20,9 +20,10 @@ A 5-row borderless footer pinned under every Claude Code pane, showing:
 - Line 4 is the rate-limit lane — a live `GET /api/oauth/usage` reading (or
   Claude Code's cache as fallback), with each window's reset as a local
   wall-clock time and date.
-- Line 5 is the Paniolo lane: `paniolo stale list` state counts, `paniolo
-  wiki` error/warn totals, and `paniolo qmd status` document count for the
-  target pane's repo — cached 5 min per repo, blank where no stats exist.
+- Line 5 is the Paniolo lane: `paniolo stale list` state counts (every
+  non-zero state, fixed order), `paniolo wiki` error/warn totals, and
+  `paniolo qmd status` document count for the target pane's repo — cached
+  5 min per repo, blank where no stats exist.
 - Footers are plugin-owned panes labeled `claude-status:<pane>`; they open
   reactively on `pane.agent_detected`, close when their Claude pane exits,
   and resurrect their render loop after herdr server restarts.

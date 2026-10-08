@@ -7,7 +7,7 @@ A five-row Herdr footer under each Codex pane, matching the other status plugins
  <terminal title> - dirty <repo> 2m 1u
  working - <session> - <sandbox/approval> - <tool> - ctx 85k/258k - 788k in - 3k out
  limits 5h 3% resets 17:00 - W 45% resets Fri 12:00 - usage 12m old (/status)
- Paniolo: stale pending 2 - wiki err 1 warn 3 - qmd docs 12k
+ Paniolo: stale pend 2 ins 1 - wiki err 1 warn 3 - qmd docs 12k
 ```
 
 ## Setup

@@ -72,6 +72,30 @@ function panioloStats(root) {
   return stats;
 }
 
+// Fixed display order for the stale lane — positions never move; unknown
+// ids append at the end with their full name.
+const STALE_ORDER = [
+  'pending-verification', 'confirmed-stale', 'insufficient-evidence',
+  'dismissed', 'resolved-updated', 'remediation-proposed', 'obsolete',
+];
+const STALE_LABELS = {
+  'pending-verification': 'pend',
+  'confirmed-stale': 'conf',
+  'insufficient-evidence': 'ins',
+  'dismissed': 'dis',
+  'resolved-updated': 'res',
+  'remediation-proposed': 'prop',
+  'obsolete': 'obs',
+};
+
+function staleSegs(c) {
+  const rank = id => (STALE_ORDER.indexOf(id) + 1 || STALE_ORDER.length + 1);
+  return Object.keys(c)
+    .filter(id => c[id] > 0)
+    .sort((a, b) => rank(a) - rank(b))
+    .map(id => `${STALE_LABELS[id] ?? id} ${c[id]}`);
+}
+
 function frame(p) {
   const title = String(p?.title ?? '');
   const task = String(p?.terminal_title_stripped ?? '').replace(/^\S+\.exe:\s*/, '');
@@ -161,12 +185,7 @@ function frame(p) {
     const s = root && panioloStats(root);
     if (s) {
       const parts = [];
-      const c = s.stale ?? {};
-      const segs = [];
-      if (c['pending-verification']) segs.push(`pending ${c['pending-verification']}`);
-      if (c['confirmed-stale']) segs.push(`confirmed ${c['confirmed-stale']}`);
-      if (c['remediation-proposed']) segs.push(`proposed ${c['remediation-proposed']}`);
-      if (c['insufficient-evidence']) segs.push(`insuff ${c['insufficient-evidence']}`);
+      const segs = staleSegs(s.stale ?? {});
       if (segs.length) parts.push(`stale ${segs.join(' ')}`);
       if (s.wikiErr || s.wikiWarn) parts.push(`wiki err ${s.wikiErr} warn ${s.wikiWarn}`);
       if (s.qmdDocs) parts.push(`qmd docs ${s.qmdDocs >= 1e3 ? (s.qmdDocs / 1e3).toFixed(1) + 'k' : s.qmdDocs}`);
