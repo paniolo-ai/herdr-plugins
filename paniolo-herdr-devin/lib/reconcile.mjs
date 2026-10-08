@@ -5,14 +5,16 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { env } from 'node:process';
 import {
-  herdr, usage, readTranscript, contextWindow, git,
+  herdr, herdrText, usage, readTranscript, contextWindow, git,
   FOOTER_PREFIX, FOOTER_MAX_ROWS, LOCK_DIR,
 } from './core.mjs';
 
 const home = env.USERPROFILE ?? env.HOME ?? '';
 const pluginRoot = env.HERDR_PLUGIN_ROOT ?? dirname(dirname(fileURLToPath(import.meta.url)));
 const footerCmd = `node "${join(pluginRoot, 'footer.mjs')}"`;
-const SHELL_RE = /powershell|pwsh|cmd\.exe|bash|zsh|fish/i;
+// Matches a bare shell prompt line: `PS C:\path>`, `C:\path>`, or a Unix
+// prompt trailing `$`/`#`/`%`. The painted footer band never ends like this.
+const BARE_PROMPT_RE = /^PS\s.*>\s*$|[$#%>]\s*$/;
 
 function devinInfo(agent) {
   const sessionId = agent.agent_session?.value;
@@ -157,8 +159,12 @@ function reconcileInner() {
     const m = (p.label ?? '').match(/^devin-status:(\S+)/);
     if (!m) continue;
     const target = m[1];
-    const info = herdr('pane', 'get', p.pane_id)?.pane;
-    if (SHELL_RE.test(info?.terminal_title_stripped ?? '')) {
+    // pane.get carries no shell-title field on herdr 0.9.3, so a killed loop
+    // is found by its screen instead: a dead footer leaves the pane sitting
+    // on a bare prompt, a live one's band never does.
+    const screen = herdrText('pane', 'read', p.pane_id);
+    const lastLine = screen.split('\n').map(l => l.trimEnd()).filter(Boolean).at(-1) ?? '';
+    if (BARE_PROMPT_RE.test(lastLine)) {
       herdr('pane', 'send-text', p.pane_id, `${footerCmd} ${target}`);
       herdr('pane', 'send-keys', p.pane_id, 'enter');
     }

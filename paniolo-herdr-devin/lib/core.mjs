@@ -31,6 +31,13 @@ export function herdr(...args) {
   try { return JSON.parse(r.stdout).result; } catch { return null; }
 }
 
+// Same spawn as herdr(), for CLI verbs that print raw text instead of the
+// JSON envelope (`pane read`).
+export function herdrText(...args) {
+  const r = spawnSync(HERDR, args, { encoding: 'utf8', timeout: 15_000, windowsHide: true });
+  return r.status === 0 ? (r.stdout ?? '') : '';
+}
+
 export function devinDir() {
   const candidates = platform === 'win32'
     ? [join(env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'), 'devin')]
