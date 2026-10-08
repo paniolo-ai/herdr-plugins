@@ -15,6 +15,11 @@ const footerCmd = `node "${join(pluginRoot, 'footer.mjs')}"`;
 // Matches a bare shell prompt line: `PS C:\path>`, `C:\path>`, or a Unix
 // prompt trailing `$`/`#`/`%`. The painted footer band never ends like this.
 const BARE_PROMPT_RE = /^PS\s.*>\s*$|[$#%>]\s*$/;
+// The footer's band opens with this plugin's statusline signature; matching
+// it on screen finds live loops and killed ones' scrollback residue alike,
+// which is how label-less footers are recognised on Windows where
+// process-info only reports the pane's shell.
+const BAND_RE = /^\s*devin\b.*\bC\d+%/m;
 
 function devinInfo(agent) {
   const sessionId = agent.agent_session?.value;
@@ -100,11 +105,11 @@ function reconcileInner() {
     if (/^devin \S* ?C\d+% /.test(p.label ?? '')) herdr('pane', 'rename', p.pane_id, '--clear');
   }
 
-  // Footer bookkeeping: footers carry label devin-status:<target>. A live
-  // render loop also shows `footer.mjs` in the pane's foreground argv, which
-  // is how unlabeled survivors of an interrupted provision are found — a
-  // bare shell left by a killed loop is indistinguishable from a user pane
-  // and is left alone.
+  // Footer bookkeeping: footers carry label devin-status:<target>. Unlabeled
+  // survivors are found by `footer.mjs` in the pane's foreground argv, or —
+  // on Windows, where process-info only reports the shell — by the band on
+  // screen, including residue a killed loop leaves in scrollback; a dead
+  // one is adopted and the resurrect pass restarts it.
   const footerByTarget = new Map();
   const footerByTab = new Map();
   for (const p of panes) {
@@ -118,8 +123,10 @@ function reconcileInner() {
     if (p.label) continue; // user-named pane — never a plugin footer
     const fg = herdr('pane', 'process-info', '--pane', p.pane_id)
       ?.process_info?.foreground_processes ?? [];
-    const isFooter = fg.some(pr =>
+    let isFooter = fg.some(pr =>
       /(^|[\\/])footer\.mjs$/.test(pr.argv?.at(-1) ?? '') || /footer\.mjs/.test(pr.cmdline ?? ''));
+    if (!isFooter && devinAgents.some(a => a.tab_id === p.tab_id))
+      isFooter = BAND_RE.test(herdrText('pane', 'read', p.pane_id));
     if (!isFooter) continue;
     // Unlabeled live footer: adopt when its tab has a devin pane and no
     // footer yet (the loop already renders that pane per its fallback);
