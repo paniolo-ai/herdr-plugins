@@ -221,13 +221,19 @@ function processStartMs(pid) {
   return null;
 }
 
+// The session id a pane was launched to resume, from its foreground cmdline
+// (`codex resume <id>` / `codex.js resume <id>`); null when absent.
+export function resumeSessionId(info) {
+  const cmd = (info?.foreground_processes ?? []).map(p => p.cmdline ?? '').join(' ');
+  return RESUME_RE.exec(cmd)?.[1] ?? null;
+}
+
 // Identify which rollout an unbound Codex pane is running. `paneText` is the
 // pane's readout, `info` its `pane process-info`; `claimed` holds ids already
 // adopted this pass so two panes never bind the same session. Returns
 // {id, path} or null.
 export function adoptSession(agent, paneText, info, claimed = new Set()) {
-  const cmd = (info?.foreground_processes ?? []).map(p => p.cmdline ?? '').join(' ');
-  const resume = RESUME_RE.exec(cmd)?.[1];
+  const resume = resumeSessionId(info);
   if (resume) {
     const path = transcriptPath(resume);
     return path && !claimed.has(resume) ? { id: resume, path } : null;
