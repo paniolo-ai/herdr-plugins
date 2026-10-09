@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { env } from 'node:process';
 import { herdr, herdrText, git, FOOTER_PREFIX, FOOTER_MAX_ROWS, LOCK_DIR } from './core.mjs';
 import {
-  quotaWindows, transcriptPath, tailSnapshot,
+  quotaWindows, transcriptPath, tailSnapshot, adoptSession,
 } from './codex.mjs';
 
 const home = env.USERPROFILE ?? env.HOME ?? '';
@@ -99,6 +99,24 @@ function reconcileInner(herdr) {
   const labelByPane = Object.fromEntries(panes.map(p => [p.pane_id, p.label]));
   const codexAgents = agents.filter(a => a.agent === 'codex');
   const codexPanes = new Set(codexAgents.map(a => a.pane_id));
+
+  // Unbound panes: the SessionStart hook is the only writer of agent_session
+  // and it does not re-fire after a missed report, so reconcile re-discovers
+  // the pane's rollout and reports it (write-once means the first report
+  // lands). `adopted` prevents two panes claiming the same session.
+  const adopted = new Set();
+  for (const a of codexAgents) {
+    if (a.agent_session?.value) continue;
+    const info = herdr('pane', 'process-info', '--pane', a.pane_id)?.process_info;
+    const adopt = adoptSession(a, herdrText('pane', 'read', a.pane_id), info, adopted);
+    if (!adopt) continue;
+    adopted.add(adopt.id);
+    herdr('pane', 'report-agent-session', a.pane_id, '--source', 'herdr:codex',
+      '--agent', 'codex', '--seq', String(Date.now()),
+      '--agent-session-id', adopt.id, '--agent-session-path', adopt.path,
+      '--', 'codex', 'resume', adopt.id);
+    a.agent_session = { agent: 'codex', kind: 'id', source: 'paniolo:adopt', value: adopt.id };
+  }
 
   for (const a of codexAgents) {
     const snap = paneSnapshot(a);
