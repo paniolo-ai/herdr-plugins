@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { env } from 'node:process';
 import { herdr, herdrText, git, FOOTER_PREFIX, FOOTER_MAX_ROWS, LOCK_DIR } from './core.mjs';
 import {
-  quotaWindows, transcriptPath, tailSnapshot, adoptSession,
+  quotaWindows, transcriptPath, tailSnapshot, adoptSession, resumeSessionId,
 } from './codex.mjs';
 
 const home = env.USERPROFILE ?? env.HOME ?? '';
@@ -25,7 +25,9 @@ const OUR_LABEL_RE = /^codex\b.*\bC(?:\d+|\?\?)%/;
 const BAND_RE = /^\s*codex\b.*\bC(?:\d+|\?\?)%/m;
 
 export function paneSnapshot(agent) {
-  const sessionId = agent.agent_session?.value ?? null;
+  // A `session` token is reconcile's override for a proven-stale binding
+  // (write-once means the stored agent_session can never be corrected).
+  const sessionId = agent.tokens?.session ?? agent.agent_session?.value ?? null;
   const path = transcriptPath(sessionId);
   return { ...tailSnapshot(path), sessionId, path };
 }
@@ -106,8 +108,17 @@ function reconcileInner(herdr) {
   // lands). `adopted` prevents two panes claiming the same session.
   const adopted = new Set();
   for (const a of codexAgents) {
-    if (a.agent_session?.value) continue;
+    const bound = a.agent_session?.value;
     const info = herdr('pane', 'process-info', '--pane', a.pane_id)?.process_info;
+    // A `codex resume <id>` cmdline that differs from the bound id is proof
+    // the write-once binding is stale; the binding cannot be re-reported, so
+    // the real session is surfaced through the session token instead.
+    const resumed = resumeSessionId(info);
+    if (bound) {
+      if (resumed && resumed !== bound)
+        a.agent_session = { agent: 'codex', kind: 'id', source: 'paniolo:adopt', value: resumed };
+      continue;
+    }
     const adopt = adoptSession(a, herdrText('pane', 'read', a.pane_id), info, adopted);
     if (!adopt) continue;
     adopted.add(adopt.id);
@@ -121,9 +132,12 @@ function reconcileInner(herdr) {
   for (const a of codexAgents) {
     const snap = paneSnapshot(a);
     const { title, stats, model } = statusline(a, snap, quotaSeg(quotaWindows(snap)));
+    const toks = ['--token', `model=${model}`, '--token', `stats=${stats}`];
+    if (a.agent_session?.source === 'paniolo:adopt')
+      toks.push('--token', `session=${a.agent_session.value}`);
     herdr('pane', 'report-metadata', a.pane_id, '--source', 'paniolo-codexline',
       '--seq', String(Date.now()), '--ttl-ms', '120000',
-      '--token', `model=${model}`, '--token', `stats=${stats}`, '--title', title);
+      ...toks, '--title', title);
     if (labelByPane[a.pane_id] !== title) herdr('pane', 'rename', a.pane_id, title);
   }
 
