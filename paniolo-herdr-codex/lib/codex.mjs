@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, statSy
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { env } from 'node:process';
+import { spawnSync } from 'node:child_process';
 import { STATE_DIR, repoRoot } from './core.mjs';
 
 const codexHome = env.CODEX_HOME ?? join(homedir(), '.codex');
@@ -140,4 +141,115 @@ export function quotaWindows(s = emptySnapshot(), now = Date.now()) {
 export function transcriptIdleSecs(path, snapshot) {
   if (snapshot?.lastAt) return Math.max(0, (Date.now() - snapshot.lastAt) / 1000);
   try { return (Date.now() - statSync(path).mtimeMs) / 1000; } catch { return -1; }
+}
+
+// --- Session adoption -------------------------------------------------------
+// herdr's agent_session binding is written once, only when the SessionStart
+// hook fires with HERDR_* env present — a missed report (server down, pane
+// spawned outside herdr, restart) stays missing. Reconcile re-discovers the
+// session for unbound panes and re-reports it. Matching is deliberately
+// conservative: a wrong bind cannot be undone, so an unbound `C??%` footer is
+// preferred over a misfire.
+
+const ROLLOUT_RE = /-([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})\.jsonl$/i;
+const RESUME_RE = /\bresume['"]?\s+['"]?([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})/i;
+const normWs = s => (s ?? '').replace(/\s+/g, ' ').trim();
+const normPath = s => (s ?? '').replaceAll('\\', '/').replace(/\/+$/, '').toLowerCase();
+
+// Rollout files under sessions/, newest first; stops once files predate loMs.
+export function recentRollouts(home = codexHome, loMs = 0) {
+  const out = [];
+  function walk(dir) {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) { walk(p); continue; }
+      const m = ROLLOUT_RE.exec(e.name);
+      if (!m) continue;
+      let birth = 0;
+      try { birth = statSync(p).birthtimeMs || statSync(p).mtimeMs; } catch {}
+      if (birth >= loMs) out.push({ path: p, id: m[1], birthMs: birth });
+    }
+  }
+  try { walk(join(home, 'sessions')); } catch {}
+  return out.sort((a, b) => b.birthMs - a.birthMs);
+}
+
+// The head of a rollout: session_meta cwd and the first real user prompt
+// (the injected AGENTS.md wrapper shares text across sessions, so it is not
+// a usable identity signal).
+export function rolloutHead(path) {
+  let head = '';
+  try {
+    const fd = openSync(path, 'r');
+    const buf = Buffer.alloc(256 * 1024);
+    head = buf.toString('utf8', 0, readSync(fd, buf, 0, buf.length, 0));
+    closeSync(fd);
+  } catch { return {}; }
+  let cwd = null, prompt = null, startMs = null;
+  for (const line of head.split('\n')) {
+    let rec;
+    try { rec = JSON.parse(line); } catch { continue; }
+    const p = rec?.payload;
+    if (rec?.type === 'session_meta') {
+      if (p?.cwd) cwd = p.cwd;
+      if (p?.timestamp) startMs = Date.parse(p.timestamp) || null;
+    }
+    if (prompt) continue;
+    if (rec?.type !== 'response_item' || p?.type !== 'message' || p?.role !== 'user') continue;
+    const text = normWs(p.content?.map(c => c.text).join(' '));
+    if (text && !text.startsWith('# AGENTS.md') && !text.startsWith('<'))
+      prompt = text;
+  }
+  return { cwd, prompt, startMs };
+}
+
+function processStartMs(pid) {
+  if (!pid) return null;
+  const tries = process.platform === 'win32'
+    ? [['powershell', ['-NoProfile', '-Command',
+        `(Get-Process -Id ${pid} -ErrorAction SilentlyContinue).StartTime.ToFileTime()`]]]
+    : [['ps', ['-p', String(pid), '-o', 'lstart=']]];
+  for (const [cmd, args] of tries) {
+    const r = spawnSync(cmd, args, { encoding: 'utf8', timeout: 10_000, windowsHide: true });
+    const out = (r.stdout ?? '').trim();
+    if (!out) continue;
+    const win = Number(out);                    // FILETIME: 100ns since 1601
+    if (Number.isFinite(win) && win > 1e15) return win / 1e4 - 11644473600000;
+    const t = Date.parse(out);
+    if (Number.isFinite(t)) return t;
+  }
+  return null;
+}
+
+// Identify which rollout an unbound Codex pane is running. `paneText` is the
+// pane's readout, `info` its `pane process-info`; `claimed` holds ids already
+// adopted this pass so two panes never bind the same session. Returns
+// {id, path} or null.
+export function adoptSession(agent, paneText, info, claimed = new Set()) {
+  const cmd = (info?.foreground_processes ?? []).map(p => p.cmdline ?? '').join(' ');
+  const resume = RESUME_RE.exec(cmd)?.[1];
+  if (resume) {
+    const path = transcriptPath(resume);
+    return path && !claimed.has(resume) ? { id: resume, path } : null;
+  }
+  const text = normWs(paneText);
+  const start = processStartMs(info?.foreground_processes?.[0]?.pid);
+  const lo = start != null ? start - 60_000 : 0;
+  const hi = start != null ? start + 600_000 : Date.now();
+  const pool = [];
+  for (const r of recentRollouts(codexHome, start != null ? lo : Date.now() - 3_600_000)) {
+    if (claimed.has(r.id) || r.birthMs < lo - 600_000 || r.birthMs > hi + 600_000) continue;
+    const h = rolloutHead(r.path);
+    if (h.cwd && agent.cwd && normPath(h.cwd) !== normPath(agent.cwd)) continue;
+    // The pane's own prompt in scrollback is identity, not a hint: the
+    // session that recorded it is this pane's regardless of timing.
+    if (h.prompt?.length >= 10 && text.includes(h.prompt.slice(0, 60)))
+      return { id: r.id, path: r.path };
+    const when = h.startMs ?? r.birthMs;
+    if (when < lo || when > hi) continue;
+    pool.push(r);
+  }
+  // Fallback: exactly one rollout plausibly belongs to this pane by
+  // launch-time + cwd alone. Any ambiguity stays unbound.
+  return start != null && pool.length === 1 ? { id: pool[0].id, path: pool[0].path } : null;
 }
