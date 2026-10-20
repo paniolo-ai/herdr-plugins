@@ -2,11 +2,10 @@
 // Renders the status footer inside a plugin pane. The pane's label
 // (claude-status:<target>) names the Claude Code pane it mirrors; if that
 // label is missing it falls back to the Claude pane in its own tab.
-import { spawn } from 'node:child_process';
-import { basename, join, delimiter } from 'node:path';
 import { env } from 'node:process';
+import { panioloStats, panioloLine, dirtySeg } from './lib/paniolo-stats.mjs';
 import {
-  herdr, fmtTok, fmtDur, fmtWhen, git, repoRoot, TICK_MS,
+  herdr, fmtTok, fmtDur, fmtWhen, repoRoot, TICK_MS,
 } from './lib/core.mjs';
 import {
   quotaWindows, loadScan, scanTranscript, transcriptIdleSecs, MODE_LABELS,
@@ -31,93 +30,6 @@ function resolveTarget(selfPane) {
   if (argvTarget) return argvTarget;
   const panes = herdr('pane', 'list')?.panes ?? [];
   return panes.find(p => p.tab_id === selfPane?.tab_id && p.agent === 'claude')?.pane_id ?? null;
-}
-
-// Paniolo stats per repo (staleness ledger, wiki findings, qmd index), cached
-// 5 min. Each probe is far heavier than git status, so they run detached and
-// in parallel: the footer paints immediately with whatever it already has and
-// picks up the new numbers on the tick after they land.
-const panioloCache = new Map(); // root -> { at, stats, running }
-
-// A child environment with the repo's node_modules/.bin ahead of PATH.
-// Windows exposes the variable as `Path`, so every casing is dropped before
-// ours goes in — otherwise the child can read the original and ignore it.
-function withBinPath(root) {
-  const next = { ...env };
-  for (const k of Object.keys(next)) if (k.toLowerCase() === 'path') delete next[k];
-  next.PATH = [join(root, 'node_modules', '.bin'), env.PATH ?? '']
-    .filter(Boolean).join(delimiter);
-  return next;
-}
-
-function runAsync(cmd, cwd, childEnv) {
-  return new Promise(resolve => {
-    let out = '';
-    try {
-      const child = spawn(cmd, {
-        cwd, shell: true, windowsHide: true, env: childEnv,
-      });
-      child.stdout?.on('data', d => { out += d; });
-      child.on('error', () => resolve(''));
-      child.on('close', () => resolve(out));
-      setTimeout(() => { try { child.kill(); } catch {} }, 30_000).unref();
-    } catch { resolve(''); }
-  });
-}
-
-async function refreshPaniolo(root) {
-  const entry = panioloCache.get(root) ?? { at: 0, stats: null };
-  entry.running = true;
-  panioloCache.set(root, entry);
-  const childEnv = withBinPath(root);
-  const [staleOut, wikiOut, qmdOut] = await Promise.all([
-    runAsync('paniolo stale list', root, childEnv),
-    runAsync('paniolo wiki', root, childEnv),
-    runAsync('paniolo qmd status', root, childEnv),
-  ]);
-  const stats = {};
-  try {
-    const items = JSON.parse(staleOut || 'null');
-    if (Array.isArray(items)) {
-      const c = {};
-      for (const it of items) c[it.state] = (c[it.state] ?? 0) + 1;
-      stats.stale = c;
-    }
-  } catch {}
-  try {
-    let e = 0, w = 0;
-    for (const m of wikiOut.matchAll(/(\d+) error,\s*(\d+) warn/g)) {
-      e += Number(m[1]); w += Number(m[2]);
-    }
-    if (e || w) { stats.wikiErr = e; stats.wikiWarn = w; }
-  } catch {}
-  try {
-    const m = qmdOut.match(/(\d+) active document/);
-    if (m) stats.qmdDocs = Number(m[1]);
-  } catch {}
-  panioloCache.set(root, { at: Date.now(), stats, running: false });
-}
-
-function panioloStats(root) {
-  const hit = panioloCache.get(root);
-  if (hit?.running) return hit.stats;
-  if (!hit || Date.now() - hit.at >= 300_000) refreshPaniolo(root);
-  return hit?.stats ?? null;
-}
-
-function dirtySeg(roots) {
-  const parts = [];
-  for (const root of roots) {
-    const st = git(['status', '--porcelain'], root).split('\n').filter(Boolean);
-    if (!st.length) continue;
-    const m = st.filter(l => !l.startsWith('??')).length;
-    const u = st.length - m;
-    let seg = basename(root);
-    if (m) seg += ` ${m}m`;
-    if (u) seg += ` ${u}u`;
-    parts.push(seg);
-  }
-  return parts.length ? `dirty ${parts.join(' - ')}` : '';
 }
 
 // Rate-limit lane. A window whose cached reading has expired renders as `?`
@@ -186,43 +98,6 @@ function limitsLine(q, width) {
   return build(2, 0);
 }
 
-// Fixed display order for the stale lane — positions never move; unknown
-// ids append at the end with their full name.
-const STALE_ORDER = [
-  'pending-verification', 'confirmed-stale', 'insufficient-evidence',
-  'dismissed', 'resolved-updated', 'remediation-proposed', 'obsolete',
-];
-const STALE_LABELS = {
-  'pending-verification': 'pend',
-  'confirmed-stale': 'conf',
-  'insufficient-evidence': 'ins',
-  'dismissed': 'dis',
-  'resolved-updated': 'res',
-  'remediation-proposed': 'prop',
-  'obsolete': 'obs',
-};
-
-function staleSegs(c) {
-  const rank = id => (STALE_ORDER.indexOf(id) + 1 || STALE_ORDER.length + 1);
-  return Object.keys(c)
-    .filter(id => c[id] > 0)
-    .sort((a, b) => rank(a) - rank(b))
-    .map(id => `${STALE_LABELS[id] ?? id} ${c[id]}`);
-}
-
-function panioloLine(cwd) {
-  if (!cwd) return '';
-  const root = repoRoot(cwd);
-  const s = root && panioloStats(root);
-  if (!s) return '';
-  const parts = [];
-  const segs = staleSegs(s.stale ?? {});
-  if (segs.length) parts.push(`stale ${segs.join(' ')}`);
-  if (s.wikiErr || s.wikiWarn) parts.push(`wiki err ${s.wikiErr} warn ${s.wikiWarn}`);
-  if (s.qmdDocs) parts.push(`qmd docs ${s.qmdDocs >= 1e3 ? (s.qmdDocs / 1e3).toFixed(1) + 'k' : s.qmdDocs}`);
-  return parts.length ? `Paniolo: ${parts.join(' - ')}` : '';
-}
-
 function frame(p, width) {
   if (!p) return { sig: '', lines: ['claude - no pane', '', '', '', ''] };
   const q = quotaWindows();
@@ -278,7 +153,7 @@ function frame(p, width) {
     [status, (snap.sessionId ?? '').slice(0, 8), mode, agents, pending,
       scroll, idle, ctx, tokens].filter(Boolean).join(' - '),
     limitsLine(q, width),
-    panioloLine(p.cwd),
+    panioloLine(panioloStats(p.cwd && repoRoot(p.cwd))),
   ];
   return { sig: lines.join('|'), lines };
 }
