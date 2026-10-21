@@ -3,13 +3,12 @@
 // (devin-status:<target>) names the devin pane it mirrors; if that label is
 // missing it falls back to the devin pane in its own tab.
 import { readFileSync, writeFileSync, statSync } from 'node:fs';
-import { spawnSync } from 'node:child_process';
-import { basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import { env } from 'node:process';
+import { panioloStats, panioloLine, dirtySeg } from './lib/paniolo-stats.mjs';
 import {
   herdr, readTranscript, transcriptPath, fmtTok, fmtDur,
-  git, repoRoot, TICK_MS, USAGE_CACHE,
+  repoRoot, TICK_MS, USAGE_CACHE,
 } from './lib/core.mjs';
 
 const ESC = '\x1b';
@@ -33,67 +32,6 @@ function resolveTarget(selfPane) {
 
 function readUsageCache() {
   try { return JSON.parse(readFileSync(USAGE_CACHE, 'utf8')); } catch { return null; }
-}
-
-// Paniolo stats per repo (staleness ledger, wiki findings, qmd index),
-// cached 5 min — each is heavier than git status.
-const panioloCache = new Map(); // root -> { at, stats }
-function panioloStats(root) {
-  const hit = panioloCache.get(root);
-  if (hit && Date.now() - hit.at < 300_000) return hit.stats;
-  const stats = {};
-  const pathEnv = `${root}\\node_modules\\.bin;${root}/node_modules/.bin;${env.PATH ?? ''}`;
-  const run = cmd => {
-    try {
-      return spawnSync(cmd, { cwd: root, encoding: 'utf8', timeout: 30_000, shell: true,
-        env: { ...env, PATH: pathEnv } }).stdout ?? '';
-    } catch { return ''; }
-  };
-  try {
-    const items = JSON.parse(run('paniolo stale list') || 'null');
-    if (Array.isArray(items)) {
-      const c = {};
-      for (const it of items) c[it.state] = (c[it.state] ?? 0) + 1;
-      stats.stale = c;
-    }
-  } catch {}
-  try {
-    let e = 0, w = 0;
-    for (const m of run('paniolo wiki').matchAll(/(\d+) error,\s*(\d+) warn/g)) {
-      e += Number(m[1]); w += Number(m[2]);
-    }
-    if (e || w) { stats.wikiErr = e; stats.wikiWarn = w; }
-  } catch {}
-  try {
-    const m = run('paniolo qmd status').match(/(\d+) active document/);
-    if (m) stats.qmdDocs = Number(m[1]);
-  } catch {}
-  panioloCache.set(root, { at: Date.now(), stats });
-  return stats;
-}
-
-// Fixed display order for the stale lane — positions never move; unknown
-// ids append at the end with their full name.
-const STALE_ORDER = [
-  'pending-verification', 'confirmed-stale', 'insufficient-evidence',
-  'dismissed', 'resolved-updated', 'remediation-proposed', 'obsolete',
-];
-const STALE_LABELS = {
-  'pending-verification': 'pend',
-  'confirmed-stale': 'conf',
-  'insufficient-evidence': 'ins',
-  'dismissed': 'dis',
-  'resolved-updated': 'res',
-  'remediation-proposed': 'prop',
-  'obsolete': 'obs',
-};
-
-function staleSegs(c) {
-  const rank = id => (STALE_ORDER.indexOf(id) + 1 || STALE_ORDER.length + 1);
-  return Object.keys(c)
-    .filter(id => c[id] > 0)
-    .sort((a, b) => rank(a) - rank(b))
-    .map(id => `${STALE_LABELS[id] ?? id} ${c[id]}`);
 }
 
 function frame(p) {
@@ -129,18 +67,7 @@ function frame(p) {
           const r = fp && repoRoot(fp);
           if (r) roots.set(r, 1);
         }
-      const parts = [];
-      for (const root of roots.keys()) {
-        const st = git(['status', '--porcelain'], root).split('\n').filter(Boolean);
-        if (!st.length) continue;
-        const m = st.filter(l => !l.startsWith('??')).length;
-        const u = st.length - m;
-        let seg2 = basename(root);
-        if (m) seg2 += ` ${m}m`;
-        if (u) seg2 += ` ${u}u`;
-        parts.push(seg2);
-      }
-      if (parts.length) dirty = `dirty ${parts.join(' - ')}`;
+      dirty = dirtySeg(roots.keys());
     } catch {}
   }
 
@@ -177,21 +104,7 @@ function frame(p) {
   const taskLine = [task, dirty].filter(Boolean).join(' - ');
   const spendLine = [quota, spent].filter(Boolean).join(' - ');
 
-  // Paniolo lane: staleness counts, wiki findings, qmd index for the
-  // target pane's repo.
-  let paniolo = '';
-  if (p?.cwd) {
-    const root = repoRoot(p.cwd);
-    const s = root && panioloStats(root);
-    if (s) {
-      const parts = [];
-      const segs = staleSegs(s.stale ?? {});
-      if (segs.length) parts.push(`stale ${segs.join(' ')}`);
-      if (s.wikiErr || s.wikiWarn) parts.push(`wiki err ${s.wikiErr} warn ${s.wikiWarn}`);
-      if (s.qmdDocs) parts.push(`qmd docs ${s.qmdDocs >= 1e3 ? (s.qmdDocs / 1e3).toFixed(1) + 'k' : s.qmdDocs}`);
-      if (parts.length) paniolo = `Paniolo: ${parts.join(' - ')}`;
-    }
-  }
+  const paniolo = panioloLine(panioloStats(p?.cwd && repoRoot(p.cwd)));
   const lines = [title, taskLine, stateLine, spendLine, paniolo];
   return { sig: lines.join('|'), lines };
 }
